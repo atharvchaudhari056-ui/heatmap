@@ -1,0 +1,1 @@
+2026-10-21 | Delhi: 29.1 | Mumbai: 34.7 | Kolkata: 30.9 | Chennai: 29.4 | Bengaluru: 28.0 | Hyderabad: 31.5 | Pune: 32.8 | Ahmedabad: 36.8 | Jaipur: 30.6 | Lucknow: 30.6 | Chandigarh: 27.9 | Bhopal: 31.2 | Patna: 29.8 | Guwahati: 31.8

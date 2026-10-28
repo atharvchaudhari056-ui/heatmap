@@ -1,0 +1,72 @@
+{
+  "1": {
+    "model_mae": 1.118,
+    "rf_mae": 1.129,
+    "persistence_mae": 1.235
+  },
+  "2": {
+    "model_mae": 1.425,
+    "rf_mae": 1.446,
+    "persistence_mae": 1.616
+  },
+  "3": {
+    "model_mae": 1.58,
+    "rf_mae": 1.611,
+    "persistence_mae": 1.86
+  },
+  "4": {
+    "model_mae": 1.682,
+    "rf_mae": 1.719,
+    "persistence_mae": 2.03
+  },
+  "5": {
+    "model_mae": 1.744,
+    "rf_mae": 1.785,
+    "persistence_mae": 2.157
+  },
+  "6": {
+    "model_mae": 1.778,
+    "rf_mae": 1.83,
+    "persistence_mae": 2.258
+  },
+  "7": {
+    "model_mae": 1.799,
+    "rf_mae": 1.85,
+    "persistence_mae": 2.329
+  },
+  "8": {
+    "model_mae": 1.822,
+    "rf_mae": 1.871,
+    "persistence_mae": 2.387
+  },
+  "9": {
+    "model_mae": 1.83,
+    "rf_mae": 1.885,
+    "persistence_mae": 2.434
+  },
+  "10": {
+    "model_mae": 1.839,
+    "rf_mae": 1.89,
+    "persistence_mae": 2.475
+  },
+  "11": {
+    "model_mae": 1.842,
+    "rf_mae": 1.9,
+    "persistence_mae": 2.519
+  },
+  "12": {
+    "model_mae": 1.853,
+    "rf_mae": 1.912,
+    "persistence_mae": 2.574
+  },
+  "13": {
+    "model_mae": 1.848,
+    "rf_mae": 1.915,
+    "persistence_mae": 2.625
+  },
+  "14": {
+    "model_mae": 1.853,
+    "rf_mae": 1.919,
+    "persistence_mae": 2.667
+  }
+}

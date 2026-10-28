@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>India Live Temperature Heatmap</title>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+
+<style>
+  :root{
+    --bg:#0b0f14;
+    --panel:#121821;
+    --panel-border:#1f2733;
+    --text:#eef2f6;
+    --muted:#8b97a5;
+    --accent:#4fb0ff;
+    --good:#3fae72;
+    --warn:#e8c93a;
+    --hot:#d43b2f;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  #app{
+    display:flex; flex-direction:column;
+    height:100%;
+  }
+  header{
+    padding:14px 18px 10px;
+    border-bottom:1px solid var(--panel-border);
+    background:var(--panel);
+    display:flex; align-items:center; justify-content:space-between;
+    flex-wrap:wrap; gap:8px;
+  }
+  header h1{
+    font-size:1.05rem; margin:0; font-weight:650; letter-spacing:-0.01em;
+  }
+  header .status{
+    display:flex; align-items:center; gap:14px;
+    font-size:0.78rem; color:var(--muted);
+  }
+  .dot{
+    width:8px; height:8px; border-radius:50%;
+    background:var(--good);
+    display:inline-block;
+    margin-right:6px;
+    box-shadow:0 0 0 0 rgba(63,174,114,0.6);
+    animation:pulse 2s infinite;
+  }
+  .dot.loading{ background:var(--warn); }
+  .dot.error{ background:var(--hot); animation:none; }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 0 rgba(63,174,114,0.5); }
+    70%{ box-shadow:0 0 0 8px rgba(63,174,114,0); }
+    100%{ box-shadow:0 0 0 0 rgba(63,174,114,0); }
+  }
+  #map{ flex:1; background:#0b0f14; }
+
+  .refresh-btn{
+    background:var(--panel-border);
+    color:var(--text);
+    border:1px solid var(--panel-border);
+    border-radius:8px;
+    padding:5px 10px;
+    font-size:0.75rem;
+    cursor:pointer;
+  }
+  .refresh-btn:hover{ background:#333c46; }
+  .refresh-btn:disabled{ opacity:0.5; cursor:default; }
+
+  #dayBar{
+    display:flex;
+    gap:6px;
+    padding:10px 14px;
+    overflow-x:auto;
+    background:var(--panel);
+    border-bottom:1px solid var(--panel-border);
+  }
+  #dayBar::-webkit-scrollbar{ height:5px; }
+  .day-btn{
+    flex:0 0 auto;
+    background:transparent;
+    border:1px solid var(--panel-border);
+    color:var(--muted);
+    border-radius:20px;
+    padding:6px 13px;
+    font-size:0.75rem;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .day-btn:hover{ border-color:var(--accent); color:var(--text); }
+  .day-btn.active{
+    background:var(--accent);
+    border-color:var(--accent);
+    color:#0b0f14;
+  }
+
+  #legend{
+    position:absolute; bottom:22px; left:14px; z-index:1000;
+    background:rgba(18,24,33,0.92);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:10px 14px 12px;
+    width:190px;
+    backdrop-filter:blur(6px);
+  }
+  #legend .title{ font-size:0.72rem; color:var(--muted); margin-bottom:6px; }
+  #legend .bar{
+    height:10px; border-radius:6px;
+    background:linear-gradient(to right,#1e40c8 0%,#00aae6 19%,#1ec878 35%,#96dc32 46%,#ffe128 54%,#ffa014 63.5%,#ff501e 73%,#e11428 85%,#96003c 100%);
+    margin-bottom:4px;
+  }
+  #legend .scale{
+    display:flex; justify-content:space-between;
+    font-size:0.65rem; color:var(--muted);
+  }
+
+  #panel{
+    position:absolute; top:70px; right:14px; z-index:1000;
+    background:rgba(18,24,33,0.92);
+    border:1px solid var(--panel-border);
+    border-radius:12px;
+    padding:10px 14px;
+    font-size:0.75rem;
+    color:var(--muted);
+    max-width:210px;
+    backdrop-filter:blur(6px);
+  }
+  #panel b{ color:var(--text); }
+  #panel .row{ display:flex; justify-content:space-between; margin:3px 0; }
+
+  .city-tag{
+    background:rgba(18,24,33,0.92);
+    border:1px solid var(--panel-border);
+    border-radius:5px;
+    padding:1px 4px;
+    font-size:0.52rem;
+    color:var(--text);
+    white-space:nowrap;
+    font-weight:600;
+  }
+  .city-tag .t{ color:var(--accent); font-weight:700; }
+
+  .leaflet-container{ background:#0b0f14; }
+
+  .panel-title{
+    font-size:0.68rem; font-weight:700; letter-spacing:.05em;
+    text-transform:uppercase; color:var(--accent); margin-bottom:6px;
+  }
+  #mlPanel{
+    position:absolute; top:96px; left:14px; z-index:1000;
+    width:330px; max-height:calc(100% - 250px); overflow-y:auto;
+    background:rgba(18,24,33,0.94);
+    border:1px solid var(--panel-border);
+    border-radius:12px; padding:10px 12px;
+    backdrop-filter:blur(6px);
+    font-size:0.74rem; color:var(--muted);
+  }
+  #mlPanel select{
+    width:100%; background:#0b0f14; color:var(--text);
+    border:1px solid var(--panel-border); border-radius:8px;
+    padding:6px 8px; font-size:0.8rem; margin-bottom:8px;
+  }
+  .ml-row{ display:flex; align-items:center; gap:6px; padding:2px 0; }
+  .ml-day{ width:64px; flex:none; color:var(--text); }
+  .ml-bar{ flex:1; height:6px; background:var(--panel-border); border-radius:4px; overflow:hidden; }
+  .ml-bar i{ display:block; height:100%; border-radius:4px; }
+  .ml-row b{ color:var(--text); width:42px; text-align:right; }
+  .ml-row b.rf{ color:#f0a35e; }
+  .ml-head{ font-size:0.64rem; color:var(--muted); border-bottom:1px solid var(--panel-border); margin-bottom:3px; padding-bottom:3px; }
+  .ml-head b.lg{ color:var(--accent); }
+  .ml-head b.rf{ color:#f0a35e; }
+  .ml-summary{ margin-top:8px; padding-top:8px; border-top:1px solid var(--panel-border); line-height:1.55; }
+  .ml-summary .s-row{ display:flex; justify-content:space-between; }
+  .ml-summary .s-row b{ width:auto; }
+  .ml-summary .verdict{ margin-top:6px; color:var(--text); }
+  .ml-row em{ width:34px; font-style:normal; font-size:0.64rem; color:var(--muted); }
+  .ml-sub{ font-size:0.66rem; margin-bottom:6px; }
+  .ml-msg{ padding:8px 0; line-height:1.5; }
+  .dot-label{
+    background:rgba(18,24,33,0.92); border:1px solid var(--panel-border);
+    color:var(--text); font-weight:600; font-size:0.7rem; box-shadow:none; padding:2px 6px;
+  }
+  .dot-label::before{ display:none; }
+  .leaflet-image-layer{ filter:saturate(1.25) contrast(1.06); }
+  .state-label{
+    background:none; border:none; box-shadow:none; padding:0;
+    color:rgba(255,255,255,0.8); font-size:0.64rem; font-weight:600;
+    text-shadow:0 0 3px #000, 0 0 3px #000;
+  }
+  .state-label::before{ display:none; }
+  .hide-state-labels .state-label{ display:none; }
+
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🇮🇳 India — Temperature Forecast Map <small style="font-weight:400;color:var(--accent);font-size:0.7rem;">build 7 · borders + adaptive colors</small></h1>
+    <div class="status">
+      <span><span class="dot" id="statusDot"></span><span id="statusText">Loading…</span></span>
+      <button class="refresh-btn" id="refreshBtn">Refresh data</button>
+    </div>
+  </header>
+  <div id="dayBar"></div>
+  <div id="map">
+    <div id="legend">
+      <div class="title">Temperature at 12 PM · scale fits selected day</div>
+      <div class="bar"></div>
+      <div class="scale"><span id="lgLo">15°C</span><span id="lgMid">28°C</span><span id="lgHi">41°C</span></div>
+    </div>
+    <div id="mlPanel">
+      <div class="panel-title">🧠 ML forecast · LightGBM vs Random Forest</div>
+      <select id="mlCity"><option>Loading…</option></select>
+      <div id="mlBody"><div class="ml-msg">Connecting to local ML server…</div></div>
+    </div>
+    <div id="panel">
+      <div class="panel-title">🛰️ Live data · Open-Meteo</div>
+      <div class="row"><span>Showing</span><b id="shownDate">–</b></div>
+      <div class="row"><span>Sample points</span><b id="cityCount">–</b></div>
+      <div class="row"><span>Avg temp</span><b id="avgTemp">–</b></div>
+      <div class="row"><span>Hottest</span><b id="hottest">–</b></div>
+      <div class="row"><span>Coolest</span><b id="coolest">–</b></div>
+      <div class="row"><span>Data fetched at</span><b id="lastUpdated">–</b></div>
+      <div class="row" id="errorRow" style="display:none;"><span>Last error</span><b id="errorText" style="color:var(--hot);">–</b></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Simplified India outline (lon, lat) — used only to keep the sample grid on land ----
+const OUTLINE = [
+  [68.2,23.7],[69.5,26.0],[71.0,27.5],[74.0,29.5],[75.0,30.5],[74.0,32.8],
+  [74.5,34.3],[75.8,35.3],[76.9,36.4],[78.0,35.5],[79.2,34.5],[78.5,32.5],
+  [81.0,30.2],[85.0,28.2],
+  [88.1,27.0],[89.5,26.6],[92.5,27.9],[95.5,28.2],[97.2,28.0],[96.0,26.5],
+  [93.0,26.0],[91.0,25.6],[89.0,25.2],[88.3,21.6],[86.7,20.3],[83.3,17.7],
+  [80.2,15.9],[80.3,13.1],[79.8,9.3],[77.0,8.1],[76.0,10.0],[74.8,12.9],
+  [73.5,15.5],[72.8,19.0],[70.0,20.7],[68.2,23.7]
+];
+
+function pointInRing(lon, lat, ring){
+  let inside = false;
+  for(let i=0, j=ring.length-1; i<ring.length; j=i++){
+    const xi=ring[i][0], yi=ring[i][1], xj=ring[j][0], yj=ring[j][1];
+    const intersect = ((yi>lat)!=(yj>lat)) && (lon < (xj-xi)*(lat-yi)/(yj-yi)+xi);
+    if(intersect) inside = !inside;
+  }
+  return inside;
+}
+const pointInPolygon = (lon, lat, poly) => pointInRing(lon, lat, poly);
+
+// Load an accurate India boundary from a public TopoJSON (falls back to the rough outline above if it fails)
+async function loadIndiaBoundary(){
+  try{
+    const res = await fetch('https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json');
+    if(!res.ok) throw new Error('boundary fetch failed: HTTP ' + res.status);
+    const topology = await res.json();
+    const fc = topojson.feature(topology, topology.objects.countries);
+    const india = fc.features.find(f => String(f.id) === '356');
+    if(!india) throw new Error('India feature not found in boundary data');
+    const geom = india.geometry;
+    indiaBoundaryRings = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+  }catch(err){
+    console.error('Falling back to simplified outline for the India boundary:', err);
+    indiaBoundaryRings = [[OUTLINE]];
+  }
+}
+
+function pointInIndia(lon, lat){
+  for(const polygon of indiaBoundaryRings){
+    const [exterior, ...holes] = polygon;
+    if(pointInRing(lon, lat, exterior) && !holes.some(h => pointInRing(lon, lat, h))){
+      return true;
+    }
+  }
+  return false;
+}
+
+// Fixed absolute temperature scale (not stretched per-refresh) — same color always means the same
+// temperature, and stops are spaced closely enough through India's typical range that small
+// differences are actually visible.
+const TEMP_STOPS = [
+  {v:15,   c:[30,64,200]},
+  {v:20,   c:[0,170,230]},
+  {v:24,   c:[30,200,120]},
+  {v:27,   c:[150,220,50]},
+  {v:29,   c:[255,225,40]},
+  {v:31.5, c:[255,160,20]},
+  {v:34,   c:[255,80,30]},
+  {v:37,   c:[225,20,40]},
+  {v:41,   c:[150,0,60]}
+];
+// Colors are spread across [lo, hi]. The heat map passes in the selected day's own range
+// (so the hottest areas are always red); anything else defaults to a fixed 15-41C scale.
+let colorRange = { lo: 15, hi: 41 };
+function tempColorRGB(t, lo = 15, hi = 41){
+  const x = Math.min(1, Math.max(0, (t - lo) / ((hi - lo) || 1)));
+  const base0 = TEMP_STOPS[0].v;
+  const v = base0 + x * (TEMP_STOPS[TEMP_STOPS.length-1].v - base0);   // position on the base palette
+  for(let i=0;i<TEMP_STOPS.length-1;i++){
+    if(v>=TEMP_STOPS[i].v && v<=TEMP_STOPS[i+1].v){
+      const f=(v-TEMP_STOPS[i].v)/(TEMP_STOPS[i+1].v-TEMP_STOPS[i].v);
+      return TEMP_STOPS[i].c.map((ch,idx)=> Math.round(ch + f*(TEMP_STOPS[i+1].c[idx]-ch)));
+    }
+  }
+  return TEMP_STOPS[TEMP_STOPS.length-1].c;
+}
+
+function idwTemp(lon, lat, points){
+  let sumW = 0, sumWT = 0;
+  for(const p of points){
+    const dLon = lon - p.lon, dLat = lat - p.lat;
+    const d2 = dLon*dLon + dLat*dLat;
+    if(d2 < 1e-5) return p.temp;
+    const w = 1 / d2;
+    sumW += w; sumWT += w * p.temp;
+  }
+  return sumW > 0 ? sumWT / sumW : null;
+}
+
+// Web Mercator helpers — Leaflet's basemap is projected in Web Mercator, where equal
+// pixel steps are NOT equal steps of latitude (spacing stretches away from the equator).
+// Authoring the raster with plain linear latitude caused the visible misalignment,
+// worst at the northern edge (Kashmir) since that's furthest from the map's center.
+function mercY(latDeg){
+  const rad = latDeg * Math.PI / 180;
+  return Math.log(Math.tan(Math.PI/4 + rad/2));
+}
+function mercInvLat(m){
+  return (2 * Math.atan(Math.exp(m)) - Math.PI/2) * 180 / Math.PI;
+}
+
+// Build a smooth, blurred, interpolated field (low-res IDW field, upscaled with smoothing),
+// clipped to the real India boundary — this is what makes it look like a satellite-style heat map
+// instead of a blocky grid.
+function buildHeatOverlayDataUrl(points){
+  const { lonMin, lonMax, latMin, latMax } = FIELD_BOUNDS;
+  const mTop = mercY(latMax), mBottom = mercY(latMin);
+  const FIELD_W = 160, FIELD_H = 190;
+  const field = document.createElement('canvas');
+  field.width = FIELD_W; field.height = FIELD_H;
+  const fctx = field.getContext('2d');
+  const img = fctx.createImageData(FIELD_W, FIELD_H);
+  for(let py = 0; py < FIELD_H; py++){
+    const lat = mercInvLat(mTop + (py / FIELD_H) * (mBottom - mTop));
+    for(let px = 0; px < FIELD_W; px++){
+      const lon = lonMin + (px / FIELD_W) * (lonMax - lonMin);
+      const idx = (py * FIELD_W + px) * 4;
+      const t = idwTemp(lon, lat, points);
+      if(t === null){ img.data[idx+3] = 0; continue; }
+      const [r,g,b] = tempColorRGB(t, colorRange.lo, colorRange.hi);
+      img.data[idx]=r; img.data[idx+1]=g; img.data[idx+2]=b; img.data[idx+3]=255;
+    }
+  }
+  fctx.putImageData(img, 0, 0);
+
+  const CANVAS_W = 640, CANVAS_H = 760;
+  const toPx = (lon, lat) => [
+    (lon - lonMin) / (lonMax - lonMin) * CANVAS_W,
+    (mercY(lat) - mTop) / (mBottom - mTop) * CANVAS_H
+  ];
+  const traceBoundary = (ctx) => {
+    ctx.beginPath();
+    indiaBoundaryRings.forEach(polygon => {
+      polygon.forEach(ring => {
+        ring.forEach(([lon,lat], i) => {
+          const [x,y] = toPx(lon,lat);
+          if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+        });
+        ctx.closePath();
+      });
+    });
+  };
+
+  // sharp mask of the boundary
+  const mask = document.createElement('canvas');
+  mask.width = CANVAS_W; mask.height = CANVAS_H;
+  const mctx = mask.getContext('2d');
+  traceBoundary(mctx);
+  mctx.fillStyle = '#fff';
+  mctx.fill('evenodd');
+
+  // feather it — blurring the alpha mask (not the color field) gives a soft coastline fade
+  // instead of a hard cutout edge, without muddying the colors themselves
+  const softMask = document.createElement('canvas');
+  softMask.width = CANVAS_W; softMask.height = CANVAS_H;
+  const smctx = softMask.getContext('2d');
+  smctx.filter = 'blur(6px)';
+  smctx.drawImage(mask, 0, 0);
+
+  const out = document.createElement('canvas');
+  out.width = CANVAS_W; out.height = CANVAS_H;
+  const octx = out.getContext('2d');
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(field, 0, 0, CANVAS_W, CANVAS_H);
+  octx.globalCompositeOperation = 'destination-in';
+  octx.drawImage(softMask, 0, 0);
+  octx.globalCompositeOperation = 'source-over';
+
+  return out.toDataURL();
+}
+
+// ---- Sample grid across the whole country (filtered to landmass) ----
+const GRID_STEP = 1.6; // degrees — one-time load now, so a denser grid is affordable
+const GRID = [];
+for(let lat = 7; lat <= 37; lat += GRID_STEP){
+  for(let lon = 68; lon <= 98; lon += GRID_STEP){
+    if(pointInPolygon(lon, lat, OUTLINE)){
+      GRID.push([lat, lon]);
+    }
+  }
+}
+
+// Reference city labels only (no separate live fetch tied to these — just map orientation)
+const REFERENCE_LABELS = [
+  ["Delhi", 28.61, 77.21], ["Mumbai", 19.08, 72.88], ["Kolkata", 22.57, 88.36],
+  ["Chennai", 13.08, 80.27], ["Bengaluru", 12.97, 77.59], ["Hyderabad", 17.39, 78.49],
+  ["Jaipur", 26.91, 75.79], ["Lucknow", 26.85, 80.95], ["Guwahati", 26.14, 91.73]
+];
+
+const FORECAST_DAYS = 16; // today + 15 days ahead
+let forecastByDay = null; // array[16] of arrays of {lat, lon, temp}
+let dayLabels = null; // array[16] of ISO date strings
+let selectedDay = 0;
+let isFetching = false;
+
+// ---- Map setup ----
+const map = L.map('map', { zoomControl: true, attributionControl: true })
+  .setView([22.5, 80], 5);
+
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri',
+  maxZoom: 12
+}).addTo(map);
+
+let heatOverlay = null; // L.ImageOverlay, replaced with a fresh data URL each refresh
+let indiaBoundaryRings = null; // real India boundary, loaded from a public TopoJSON at startup
+const FIELD_BOUNDS = { lonMin: 68, lonMax: 98, latMin: 6, latMax: 37 };
+
+// Static reference labels (added once — not re-rendered on refresh)
+REFERENCE_LABELS.forEach(([name, lat, lon]) => {
+  L.marker([lat, lon], {
+    icon: L.divIcon({ className: '', html: `<span class="city-tag">${name}</span>`, iconSize: [0,0] }),
+    interactive: false
+  }).addTo(map);
+});
+
+function setStatus(state, text){
+  const dot = document.getElementById('statusDot');
+  const label = document.getElementById('statusText');
+  dot.className = 'dot' + (state !== 'ok' ? ' ' + state : '');
+  label.textContent = text;
+}
+
+// Open-Meteo accepts up to 100 coordinates per request, so large grids are sent in batches.
+// Each location's response includes a `daily` array covering today + the next 15 days —
+// fetched once, not on a timer.
+// Keep only the 12:00 (noon, local time) reading from each day's hourly temperatures
+function noonFromHourly(hourly){
+  const temps = [], time = [];
+  if(hourly && hourly.time){
+    hourly.time.forEach((t, i) => {
+      if(t.endsWith('T12:00')){ time.push(t.slice(0,10)); temps.push(hourly.temperature_2m[i]); }
+    });
+  }
+  while(temps.length < FORECAST_DAYS) temps.push(null);
+  return { temps: temps.slice(0, FORECAST_DAYS), time: time.length ? time : null };
+}
+
+async function fetchForecastBatch(points){
+  const lats = points.map(p=>p[0]).join(',');
+  const lons = points.map(p=>p[1]).join(',');
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m&forecast_days=${FORECAST_DAYS}&timezone=auto`;
+  const res = await fetch(url);
+  if(res.status === 429) throw new Error('Rate limited (429) — try again in a minute');
+  if(!res.ok) throw new Error('Weather API error: HTTP ' + res.status);
+  const data = await res.json();
+  const arr = Array.isArray(data) ? data : [data];
+  return points.map((p, i) => {
+    const { temps, time } = noonFromHourly(arr[i] && arr[i].hourly);
+    return { lat: p[0], lon: p[1], temps, time };
+  });
+}
+
+async function fetchAllForecasts(){
+  const BATCH_SIZE = 100;
+  const batches = [];
+  for(let i = 0; i < GRID.length; i += BATCH_SIZE){
+    batches.push(GRID.slice(i, i + BATCH_SIZE));
+  }
+  const results = (await Promise.all(batches.map(fetchForecastBatch))).flat();
+
+  const byDay = Array.from({length: FORECAST_DAYS}, () => []);
+  let labels = null;
+  results.forEach(r => {
+    if(!labels && r.time) labels = r.time;
+    for(let d = 0; d < FORECAST_DAYS; d++){
+      const t = r.temps ? r.temps[d] : null;
+      if(t !== null && t !== undefined){
+        byDay[d].push({ lat: r.lat, lon: r.lon, temp: t });
+      }
+    }
+  });
+  if(!labels){
+    // fallback: generate ISO dates locally if the API didn't return a time array
+    labels = Array.from({length: FORECAST_DAYS}, (_, d) => {
+      const dt = new Date(); dt.setDate(dt.getDate() + d);
+      return dt.toISOString().slice(0,10);
+    });
+  }
+  return { byDay, labels };
+}
+
+function formatDayLabel(iso, index){
+  if(index === 0) return 'Today';
+  if(index === 1) return 'Tomorrow';
+  const dt = new Date(iso + 'T00:00:00');
+  return dt.toLocaleDateString(undefined, { weekday:'short', day:'numeric', month:'short' });
+}
+
+function buildDayBar(){
+  const bar = document.getElementById('dayBar');
+  bar.innerHTML = '';
+  dayLabels.forEach((iso, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'day-btn' + (i === selectedDay ? ' active' : '');
+    btn.textContent = formatDayLabel(iso, i);
+    btn.addEventListener('click', () => selectDay(i));
+    bar.appendChild(btn);
+  });
+}
+
+function selectDay(index){
+  selectedDay = index;
+  [...document.querySelectorAll('.day-btn')].forEach((btn, i) => {
+    btn.classList.toggle('active', i === index);
+  });
+  renderDay(index);
+}
+
+function renderDay(index){
+  const valid = forecastByDay[index];
+  if(!valid || valid.length === 0) throw new Error('No temperature data for this day');
+
+  const temps = valid.map(r=>r.temp);
+
+  // Fit the color scale to this day's temperatures so the hottest areas are always red
+  const sorted = [...temps].sort((a,b)=>a-b);
+  const pct = q => sorted[Math.min(sorted.length-1, Math.max(0, Math.round(q*(sorted.length-1))))];
+  // Center the scale on the day's TYPICAL (median) temperature so a few cold mountain
+  // points can't squash everything else into red. Typical = yellow-green, hot spots = red.
+  const med = pct(0.5);
+  const sigma = Math.max(1.3, (pct(0.9) - pct(0.1)) / 2.56);
+  const width = 4.8 * sigma;
+  const lo = med - 0.52 * width, hi = med + 0.48 * width;
+  colorRange = { lo, hi };
+  document.getElementById('lgLo').textContent = lo.toFixed(0) + '°C';
+  document.getElementById('lgMid').textContent = ((lo+hi)/2).toFixed(0) + '°C';
+  document.getElementById('lgHi').textContent = hi.toFixed(0) + '°C';
+
+  // smooth interpolated field, clipped to the real India boundary
+  const dataUrl = buildHeatOverlayDataUrl(valid);
+  const bounds = [[FIELD_BOUNDS.latMin, FIELD_BOUNDS.lonMin], [FIELD_BOUNDS.latMax, FIELD_BOUNDS.lonMax]];
+  if(!heatOverlay){
+    heatOverlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.96, interactive: false }).addTo(map);
+  }else{
+    heatOverlay.setUrl(dataUrl);
+  }
+
+  // side panel stats
+  const hottestPt = valid.reduce((a,b)=> b.temp > a.temp ? b : a);
+  const coolestPt = valid.reduce((a,b)=> b.temp < a.temp ? b : a);
+  const avg = temps.reduce((a,b)=>a+b,0) / temps.length;
+
+  document.getElementById('shownDate').textContent = formatDayLabel(dayLabels[index], index);
+  document.getElementById('cityCount').textContent = valid.length;
+  document.getElementById('avgTemp').textContent = avg.toFixed(1) + '°C';
+  document.getElementById('hottest').textContent = `${hottestPt.temp.toFixed(1)}°C`;
+  document.getElementById('coolest').textContent = `${coolestPt.temp.toFixed(1)}°C`;
+}
+
+async function loadForecast(){
+  if(isFetching) return;
+  isFetching = true;
+  document.getElementById('refreshBtn').disabled = true;
+  setStatus('loading', 'Fetching 16-day forecast…');
+  try{
+    const { byDay, labels } = await fetchAllForecasts();
+    forecastByDay = byDay;
+    dayLabels = labels;
+    selectedDay = 0;
+    buildDayBar();
+    renderDay(0);
+    setStatus('ok', 'Loaded');
+    document.getElementById('errorRow').style.display = 'none';
+    document.getElementById('lastUpdated').textContent = new Date().toLocaleTimeString();
+  }catch(err){
+    console.error(err);
+    setStatus('error', 'Error loading forecast');
+    document.getElementById('errorRow').style.display = 'flex';
+    document.getElementById('errorText').textContent = err.message || String(err);
+  }
+  isFetching = false;
+  document.getElementById('refreshBtn').disabled = false;
+}
+
+// ---------- State borders + names (so zooming in isn't just a blob of color) ----------
+map.createPane('borders');
+map.getPane('borders').style.zIndex = 450;          // above the heat field, below markers
+map.getPane('borders').style.pointerEvents = 'none';
+
+function updateStateLabels(){
+  // only show state names once zoomed in enough that they won't clutter the map
+  map.getContainer().classList.toggle('hide-state-labels', map.getZoom() < 5.5);
+}
+map.on('zoomend', updateStateLabels);
+
+(async function loadStateBorders(){
+  try{
+    const res = await fetch('https://gist.githubusercontent.com/jbrobst/56c13bbbf9d97d187fea01ca62ea5112/raw/e388c4cae20aa53cb5090210a42ebb9b765c0a36/india_states.geojson');
+    if(!res.ok) throw new Error('HTTP ' + res.status);
+    const geo = await res.json();
+    L.geoJSON(geo, {
+      pane: 'borders',
+      renderer: L.canvas({ pane: 'borders' }),
+      interactive: false,
+      style: { color: 'rgba(255,255,255,0.6)', weight: 1, fill: false },
+      onEachFeature: (feature, layer) => {
+        const name = feature.properties.ST_NM || feature.properties.NAME_1 || '';
+        if(name) layer.bindTooltip(name, { permanent: true, direction: 'center', className: 'state-label' });
+      }
+    }).addTo(map);
+    updateStateLabels();
+  }catch(err){
+    console.warn('Could not load state borders:', err);
+  }
+})();
+
+// ---------- ML forecast panel: talks ONLY to our own local server (app.py) ----------
+const ML_API = 'http://localhost:5000';
+const mlPanel = document.getElementById('mlPanel');
+const mlSelect = document.getElementById('mlCity');
+const mlBody = document.getElementById('mlBody');
+L.DomEvent.disableClickPropagation(mlPanel);
+L.DomEvent.disableScrollPropagation(mlPanel);
+
+let mlCities = {};
+let cityMarker = null;
+
+// Drop a dot on the selected city, then fly the map to it and center it
+function focusCity(name){
+  const c = mlCities[name];
+  if(!c) return;
+  if(cityMarker) map.removeLayer(cityMarker);
+  cityMarker = L.circleMarker(c, {
+    radius: 7, color: '#ffffff', weight: 2, fillColor: '#4fb0ff', fillOpacity: 1
+  }).addTo(map);
+  cityMarker.bindTooltip(name, { permanent: true, direction: 'top', offset: [0, -8], className: 'dot-label' });
+  map.flyTo(c, 8, { duration: 1.2 });
+}
+
+async function mlInit(){
+  try{
+    const res = await fetch(`${ML_API}/cities`);
+    mlCities = await res.json();
+    mlSelect.innerHTML = Object.keys(mlCities).map(c => `<option>${c}</option>`).join('');
+    mlSelect.addEventListener('change', mlLoad);
+    mlLoad();
+  }catch(e){
+    mlBody.innerHTML = '<div class="ml-msg">ML server not running.<br>Start it with: <b>python app.py</b></div>';
+  }
+}
+
+async function mlLoad(){
+  focusCity(mlSelect.value);
+  mlBody.innerHTML = '<div class="ml-msg">Predicting…</div>';
+  try{
+    const res = await fetch(`${ML_API}/predict?city=${encodeURIComponent(mlSelect.value)}`);
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error || 'Server error');
+    const hasRF = data.forecast.every(f => typeof f.rf_temp === 'number');
+    const temps = data.forecast.map(f => f.temp);
+    const lo = Math.min(...temps), hi = Math.max(...temps);
+    const head = `<div class="ml-row ml-head"><span class="ml-day">Day</span><span class="ml-bar" style="background:none"></span>
+      <b class="lg">LGBM</b>${hasRF ? '<b class="rf">RF</b>' : ''}</div>`;
+    const rows = data.forecast.map(f => {
+      const [r,g,b] = tempColorRGB(f.temp, lo, Math.max(hi, lo + 3));
+      const w = hi > lo ? 30 + 70 * (f.temp - lo) / (hi - lo) : 60;
+      const label = f.date === data.today ? 'Today'
+        : new Date(f.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'short', day:'numeric', month:'short'});
+      const tip = `LightGBM typical error ±${f.typical_error.toFixed(2)}°` +
+        (hasRF ? ` · Random Forest ±${f.rf_error.toFixed(2)}°` : '');
+      return `<div class="ml-row" title="${tip}"><span class="ml-day">${label}</span>
+        <span class="ml-bar"><i style="width:${w}%;background:rgb(${r},${g},${b})"></i></span>
+        <b>${f.temp.toFixed(1)}°</b>${hasRF ? `<b class="rf">${f.rf_temp.toFixed(1)}°</b>` : ''}</div>`;
+    }).join('');
+
+    // Measured accuracy on unseen 2024+ data (lower = better). Computed from the server's metrics.
+    let summary = '';
+    if(hasRF){
+      const n = data.forecast.length;
+      const avg = k => data.forecast.reduce((s, f) => s + f[k], 0) / n;
+      const lgbErr = avg('typical_error'), rfErr = avg('rf_error'), persErr = avg('persistence_error');
+      const lgbWins = data.forecast.filter(f => f.typical_error < f.rf_error).length;
+      const leader = lgbErr <= rfErr ? 'LightGBM' : 'Random Forest';
+      summary = `<div class="ml-summary">
+        <div class="panel-title">Accuracy on unseen 2024+ data</div>
+        <div class="s-row"><span>LightGBM avg error</span><b>±${lgbErr.toFixed(2)}°</b></div>
+        <div class="s-row"><span>Random Forest avg error</span><b>±${rfErr.toFixed(2)}°</b></div>
+        <div class="s-row"><span>"No change" guess</span><b>±${persErr.toFixed(2)}°</b></div>
+        <div class="verdict">${leader} has the lower average error. LightGBM is more accurate on ${lgbWins} of ${n} forecast days.</div>
+      </div>`;
+    }
+
+    mlBody.innerHTML = `<div class="ml-sub">Temperature at 12 PM (local time) · built from observed data up to ${data.based_on}.
+      Hover a row to see each model's typical error.</div>` + head + rows + summary;
+  }catch(e){
+    mlBody.innerHTML = `<div class="ml-msg">${e.message}</div>`;
+  }
+}
+mlInit();
+
+document.getElementById('refreshBtn').addEventListener('click', loadForecast);
+
+// initial load — fetches the full 16-day forecast once, no timer
+loadIndiaBoundary().then(loadForecast);
+</script>
+</body>
+</html>
